@@ -1,0 +1,19 @@
+[package]
+name = "tokio-rev-lines"
+version = "0.1.1"
+description = "This library provides an async stream for reading files or any `BufReader` line by line with buffering in reverse."
+repository = "https://github.com/JasonWei512/tokio-rev-lines"
+documentation = "https://docs.rs/tokio-rev-lines"
+license = "MIT"
+authors = ["Jason Wei"]
+keywords = ["lines", "reverse", "stream", "async", "tokio"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = { version = "1", features = ["fs", "io-util"] }
+futures-util = "0.3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "test-util", "macros"] }
