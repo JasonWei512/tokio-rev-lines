@@ -19,13 +19,15 @@ use tokio::{fs::File, io::BufReader};
 use tokio_rev_lines::RevLines;
 
 #[tokio::main]
-async fn main() {
-    let file = File::open("tests/multi_line_file").await.unwrap();
-    let rev_lines = RevLines::new(BufReader::new(file)).await.unwrap();
+async fn main() -> tokio::io::Result<()> {
+    let file = File::open("tests/multi_line_file").await?;
+    let rev_lines = RevLines::new(BufReader::new(file)).await?;
     pin_mut!(rev_lines);
-    
+
     while let Some(line) = rev_lines.next().await {
-        println!("{}", line);
+        println!("{}", line?);
     }
+    
+    Ok(())
 }
 ```

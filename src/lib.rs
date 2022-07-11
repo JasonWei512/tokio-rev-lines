@@ -1,26 +1,26 @@
-//! ### RevLines
-//!
 //! This library provides an async stream for reading files or any `BufReader` line by line with buffering in reverse.
-//! 
+//!
 //! It's an async tokio version of [rev_lines](https://github.com/mjc-gh/rev_lines).
 //!
-//! #### Example
+//! ### Example
 //!
 //! ```
-//!  use futures_util::{pin_mut, StreamExt};
-//!  use tokio::{fs::File, io::BufReader};
-//!  use tokio_rev_lines::RevLines;
+//! use futures_util::{pin_mut, StreamExt};
+//! use tokio::{fs::File, io::BufReader};
+//! use tokio_rev_lines::RevLines;
 //!
-//!  #[tokio::main]
-//!  async fn main() {
-//!      let file = File::open("tests/multi_line_file").await.unwrap();
-//!      let rev_lines = RevLines::new(BufReader::new(file)).await.unwrap();
-//!      pin_mut!(rev_lines);
+//! #[tokio::main]
+//! async fn main() -> tokio::io::Result<()> {
+//!     let file = File::open("tests/multi_line_file").await?;
+//!     let rev_lines = RevLines::new(BufReader::new(file)).await?;
+//!     pin_mut!(rev_lines);
 //!
-//!      while let Some(line) = rev_lines.next().await {
-//!          println!("{}", line);
-//!      }
-//!  }
+//!     while let Some(line) = rev_lines.next().await {
+//!         println!("{}", line?);
+//!     }
+//!
+//!     Ok(())
+//! }
 //! ```
 //!
 //! This method uses logic borrowed from [uutils/coreutils
@@ -45,7 +45,7 @@ pub struct RevLines<R> {
 impl<R: AsyncSeek + AsyncRead + Unpin> RevLines<R> {
     /// Create a `Stream<Item = String>` from a `BufReader<R>`. Internal
     /// buffering for iteration will default to 4096 bytes at a time.
-    pub async fn new(reader: BufReader<R>) -> Result<impl Stream<Item = String>> {
+    pub async fn new(reader: BufReader<R>) -> Result<impl Stream<Item = Result<String>>> {
         RevLines::with_capacity(DEFAULT_SIZE, reader).await
     }
 
@@ -54,7 +54,7 @@ impl<R: AsyncSeek + AsyncRead + Unpin> RevLines<R> {
     pub async fn with_capacity(
         cap: usize,
         mut reader: BufReader<R>,
-    ) -> Result<impl Stream<Item = String>> {
+    ) -> Result<impl Stream<Item = Result<String>>> {
         // Seek to end of reader now
         let reader_size = reader.seek(SeekFrom::End(0)).await?;
 
@@ -115,7 +115,7 @@ impl<R: AsyncSeek + AsyncRead + Unpin> RevLines<R> {
         Ok(())
     }
 
-    async fn next_line(&mut self) -> Option<String> {
+    async fn next_line(&mut self) -> Option<Result<String>> {
         let mut result: Vec<u8> = Vec::new();
 
         'outer: loop {
@@ -150,7 +150,7 @@ impl<R: AsyncSeek + AsyncRead + Unpin> RevLines<R> {
                                     break 'outer;
                                 }
 
-                                Err(_) => return None,
+                                Err(e) => return Some(Err(e)),
                             }
                         } else {
                             result.push(ch.clone());
@@ -158,7 +158,7 @@ impl<R: AsyncSeek + AsyncRead + Unpin> RevLines<R> {
                     }
                 }
 
-                Err(_) => return None,
+                Err(e) => return Some(Err(e)),
             }
         }
 
@@ -166,7 +166,7 @@ impl<R: AsyncSeek + AsyncRead + Unpin> RevLines<R> {
         result.reverse();
 
         // Convert to a String
-        Some(String::from_utf8(result).unwrap())
+        Some(Ok(String::from_utf8(result).unwrap()))
     }
 }
 
@@ -224,12 +224,23 @@ mod tests {
         assert_stream_eq(rev_lines, results).await;
     }
 
-    async fn assert_stream_eq(rev_lines: impl Stream<Item = String>, results: Vec<&str>) {
+    async fn assert_stream_eq(rev_lines: impl Stream<Item = Result<String>>, results: Vec<&str>) {
         pin_mut!(rev_lines);
 
         for result in results {
-            assert_eq!(rev_lines.next().await, Some(result.to_string()));
+            let equals = if let Some(Ok(line)) = rev_lines.next().await {
+                line == result.to_string()
+            } else {
+                false
+            };
+            assert!(equals)
         }
-        assert_eq!(rev_lines.next().await, None);
+
+        let equals = if let None = rev_lines.next().await {
+            true
+        } else {
+            false
+        };
+        assert!(equals);
     }
 }
