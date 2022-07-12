@@ -1,6 +1,6 @@
 [package]
 name = "tokio-rev-lines"
-version = "0.1.1"
+version = "0.2.1"
 description = "This library provides an async stream for reading files or any `BufReader` line by line with buffering in reverse."
 repository = "https://github.com/JasonWei512/tokio-rev-lines"
 documentation = "https://docs.rs/tokio-rev-lines"

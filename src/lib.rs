@@ -54,7 +54,7 @@ pub struct RevLines<R> {
 }
 
 impl<R: AsyncSeek + AsyncRead + Unpin> RevLines<R> {
-    /// Create a `Stream<Item = String>` from a `BufReader<R>`. Internal
+    /// Create an async stream of strings from a `BufReader<R>`. Internal
     /// buffering for iteration will default to 4096 bytes at a time.
     pub async fn new(
         reader: BufReader<R>,
@@ -62,7 +62,7 @@ impl<R: AsyncSeek + AsyncRead + Unpin> RevLines<R> {
         RevLines::with_capacity(DEFAULT_SIZE, reader).await
     }
 
-    /// Create a `Stream<Item = String>` from a `BufReader<R>`. Internal
+    /// Create an async stream of strings from a `BufReader<R>`. Internal
     /// buffering for iteration will use `cap` bytes at a time.
     pub async fn with_capacity(
         cap: usize,
