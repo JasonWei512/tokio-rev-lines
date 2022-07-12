@@ -10,7 +10,7 @@
 //! use tokio_rev_lines::RevLines;
 //!
 //! #[tokio::main]
-//! async fn main() -> tokio::io::Result<()> {
+//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     let file = File::open("tests/multi_line_file").await?;
 //!     let rev_lines = RevLines::new(BufReader::new(file)).await?;
 //!     pin_mut!(rev_lines);
@@ -28,12 +28,23 @@
 
 use futures_util::{stream, Stream};
 use std::cmp::min;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, BufReader, Result, SeekFrom};
+use thiserror::Error;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, BufReader, SeekFrom};
 
 static DEFAULT_SIZE: usize = 4096;
 
 static LF_BYTE: u8 = '\n' as u8;
 static CR_BYTE: u8 = '\r' as u8;
+
+/// Custom error types
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error(transparent)]
+    Io(#[from] tokio::io::Error),
+
+    #[error(transparent)]
+    NotUtf8(#[from] std::string::FromUtf8Error),
+}
 
 /// `RevLines` struct
 pub struct RevLines<R> {
@@ -45,7 +56,9 @@ pub struct RevLines<R> {
 impl<R: AsyncSeek + AsyncRead + Unpin> RevLines<R> {
     /// Create a `Stream<Item = String>` from a `BufReader<R>`. Internal
     /// buffering for iteration will default to 4096 bytes at a time.
-    pub async fn new(reader: BufReader<R>) -> Result<impl Stream<Item = Result<String>>> {
+    pub async fn new(
+        reader: BufReader<R>,
+    ) -> Result<impl Stream<Item = Result<String, Error>>, Error> {
         RevLines::with_capacity(DEFAULT_SIZE, reader).await
     }
 
@@ -54,7 +67,7 @@ impl<R: AsyncSeek + AsyncRead + Unpin> RevLines<R> {
     pub async fn with_capacity(
         cap: usize,
         mut reader: BufReader<R>,
-    ) -> Result<impl Stream<Item = Result<String>>> {
+    ) -> Result<impl Stream<Item = Result<String, Error>>, Error> {
         // Seek to end of reader now
         let reader_size = reader.seek(SeekFrom::End(0)).await?;
 
@@ -95,7 +108,7 @@ impl<R: AsyncSeek + AsyncRead + Unpin> RevLines<R> {
         Ok(stream)
     }
 
-    async fn read_to_buffer(&mut self, size: u64) -> Result<Vec<u8>> {
+    async fn read_to_buffer(&mut self, size: u64) -> Result<Vec<u8>, tokio::io::Error> {
         let mut buf = vec![0; size as usize];
         let offset = -(size as i64);
 
@@ -108,14 +121,14 @@ impl<R: AsyncSeek + AsyncRead + Unpin> RevLines<R> {
         Ok(buf)
     }
 
-    async fn move_reader_position(&mut self, offset: u64) -> Result<()> {
+    async fn move_reader_position(&mut self, offset: u64) -> Result<(), tokio::io::Error> {
         self.reader.seek(SeekFrom::Current(offset as i64)).await?;
         self.reader_pos += offset;
 
         Ok(())
     }
 
-    async fn next_line(&mut self) -> Option<Result<String>> {
+    async fn next_line(&mut self) -> Option<Result<String, Error>> {
         let mut result: Vec<u8> = Vec::new();
 
         'outer: loop {
@@ -150,7 +163,7 @@ impl<R: AsyncSeek + AsyncRead + Unpin> RevLines<R> {
                                     break 'outer;
                                 }
 
-                                Err(e) => return Some(Err(e)),
+                                Err(e) => return Some(Err(Error::Io(e))),
                             }
                         } else {
                             result.push(ch.clone());
@@ -158,7 +171,7 @@ impl<R: AsyncSeek + AsyncRead + Unpin> RevLines<R> {
                     }
                 }
 
-                Err(e) => return Some(Err(e)),
+                Err(e) => return Some(Err(Error::Io(e))),
             }
         }
 
@@ -166,7 +179,10 @@ impl<R: AsyncSeek + AsyncRead + Unpin> RevLines<R> {
         result.reverse();
 
         // Convert to a String
-        Some(Ok(String::from_utf8(result).unwrap()))
+        match String::from_utf8(result) {
+            Ok(s) => Some(Ok(s)),
+            Err(e) => Some(Err(Error::NotUtf8(e))),
+        }
     }
 }
 
@@ -224,7 +240,10 @@ mod tests {
         assert_stream_eq(rev_lines, results).await;
     }
 
-    async fn assert_stream_eq(rev_lines: impl Stream<Item = Result<String>>, results: Vec<&str>) {
+    async fn assert_stream_eq(
+        rev_lines: impl Stream<Item = Result<String, Error>>,
+        results: Vec<&str>,
+    ) {
         pin_mut!(rev_lines);
 
         for result in results {

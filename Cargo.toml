@@ -14,6 +14,7 @@ edition = "2018"
 [dependencies]
 tokio = { version = "1", features = ["io-util"] }
 futures-util = "0.3"
+thiserror = "1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "test-util", "macros", "fs"] }
